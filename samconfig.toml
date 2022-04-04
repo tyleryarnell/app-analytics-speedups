@@ -1,0 +1,14 @@
+version = 0.1
+[default]
+[default.deploy]
+[default.deploy.parameters]
+stack_name = "app-analytics-speedups"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-8qlpt69mhu1r"
+s3_prefix = "app-analytics-speedups"
+region = "us-west-2"
+profile = "dev-proto"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+disable_rollback = true
+parameter_overrides = "Env=\"staging\" SecretName=\"prdFilterSecret\" S3SourceBucketName=\"app-analytics\" S3MergedBucketName=\"lpsys-prd-data-analytics\" S3OutputBucketName=\"app-analytics-rollup-data\""
+image_repositories = []

@@ -1,0 +1,114 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  app-analytics-speedups
+
+Parameters:
+  Env:
+    Description: Environment
+    Type: String
+    Default: staging
+
+  SecretName:
+    Description: Name of the secret for the timezone offset api.
+    Type: String
+    Default: prdFilterSecret
+
+  S3SourceBucketName:
+    Description: Name of the S3 bucket where raw app tracking data is stored from firehose streams.
+    Type: String
+    Default: app-analytics
+
+  S3MergedBucketName:
+    Description: Name of the s3 bucket where data is merged by day.
+    Type: String
+    Default: lpsys-prd-data-analytics
+
+  S3OutputBucketName:
+    Description: Name of the s3 bucket where rollups are finally stored.
+    Type: String
+    Default: app-analytics-rollup-data
+
+Resources:
+  AppAnalyticsSourceS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: app-analytics-resources
+
+  AppAnalyticsTempS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: app-analytics-rollup-temp
+
+  SpeedupsGlueDefaultIamRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - glue.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+      Policies:
+        - PolicyName: app-analytics-speedups-s3-rd-wrt
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:Get*
+                  - s3:List*
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                  - s3:DeleteObject
+                Resource:
+                  - arn:aws:s3:::lpsys-prd-data-analytics
+                  - arn:aws:s3:::lpsys-prd-data-analytics/*
+                  - arn:aws:s3:::app-analytics-rollup-data-staging/*
+                  - arn:aws:s3:::app-analytics-rollup-data-staging
+                  - arn:aws:s3:::app-analytics-rollup-data-production/*
+                  - arn:aws:s3:::app-analytics-rollup-data-production
+                  - arn:aws:s3:::app-analytics-production
+                  - arn:aws:s3:::app-analytics-production/*
+                  - arn:aws:s3:::app-analytics-staging
+                  - arn:aws:s3:::app-analytics-stoging/*
+        - PolicyName: app-analytics-speedups-secrets-mgr
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource:
+                  - arn:aws:secretsmanager:us-west-2:259423676433:secret:stgFilterSecret-4an2pP
+                  - arn:aws:secretsmanager:us-west-2:259423676433:secret:prdFilterSecret-PZaWSd
+
+  SessionCountByGroupId:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: session-count-by-group-id
+      Description: Agg data for the speedups api.
+      GlueVersion: 3.0
+      Command:
+        Name: glueetl
+        ScriptLocation: !Sub "s3://${AppAnalyticsSourceS3Bucket}/session-count-by-group-id.py"
+        PythonVersion: 3
+      Role: !GetAtt SpeedupsGlueDefaultIamRole.Arn
+      DefaultArguments:
+        {
+          "--extra-py-files": !Sub "s3://${AppAnalyticsSourceS3Bucket}/extra-py-files/lib.zip",
+          "--secret_name": !Ref SecretName,
+          "--s3_source_bucket_name":
+            !Join ["", [!Ref S3SourceBucketName, "-", !Ref Env]],
+          "--s3_merged_bucket_name": !Ref S3MergedBucketName,
+          "--s3_output_bucket_name": !Ref AppAnalyticsTempS3Bucket,
+          "--frequency": 7,
+          "--env": !Ref Env,
+        }
